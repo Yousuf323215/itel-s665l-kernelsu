@@ -20,6 +20,7 @@ jobs:
           head -4 kernel/Makefile
 
           curl -L -o /tmp/ksu.tar.gz "https://github.com/tiann/KernelSU/archive/refs/tags/v0.9.5.tar.gz"
+          rm -rf kernel/drivers/kernelsu
           mkdir -p kernel/drivers/kernelsu
           tar xzf /tmp/ksu.tar.gz --strip-components=2 -C kernel/drivers/kernelsu KernelSU-0.9.5/kernel/
           ls kernel/drivers/kernelsu/Kconfig
