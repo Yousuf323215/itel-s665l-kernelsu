@@ -66,7 +66,7 @@ jobs:
 
           # Disable problematic configs in defconfig
           echo '# CONFIG_TRUSTY is not set' >> arch/arm64/configs/itel_s665l_defconfig
-          echo '# CONFIG_SPRD_SFP is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_SPRD_SFP_SUPPORT is not set' >> arch/arm64/configs/itel_s665l_defconfig
           echo '# CONFIG_HYBRIDSWAP is not set' >> arch/arm64/configs/itel_s665l_defconfig
           echo '# CONFIG_CORESIGHT is not set' >> arch/arm64/configs/itel_s665l_defconfig
 
@@ -77,16 +77,14 @@ jobs:
 
           # Force disable after olddefconfig (Kconfig default=y re-enables)
           scripts/config --disable HYBRIDSWAP
-          scripts/config --disable HYBRIDSWAP_SWAPD
-          scripts/config --disable HYBRIDSWAP_CORE
-          scripts/config --disable HYBRIDSWAP_ASYNC_COMPRESS
           scripts/config --disable TRUSTY
-          scripts/config --disable SPRD_SFP
+          scripts/config --disable SPRD_TSHM
+          scripts/config --disable SPRD_SFP_SUPPORT
           scripts/config --disable CORESIGHT
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
           echo "=== Verify disabled ==="
-          grep -E 'CONFIG_HYBRIDSWAP=|CONFIG_TRUSTY=|CONFIG_SPRD_SFP=' .config || echo "All disabled!"
+          grep -E 'CONFIG_HYBRIDSWAP=|CONFIG_TRUSTY=|CONFIG_SPRD_SFP_SUPPORT=' .config || echo "All disabled!"
 
       - name: Build kernel
         id: build
