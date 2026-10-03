@@ -5,7 +5,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - name: Install dependencies
         run: |
@@ -16,65 +16,70 @@ jobs:
 
       - name: Clone kernel + KernelSU
         run: |
-          # Clone Bocchi UMS9230 kernel (5.4.254)
           git clone --depth=1 https://github.com/Bocchi-The-Dev/kernel_transsion_ums9230.git kernel
           head -4 kernel/Makefile
 
-          # Download KernelSU v0.9.5 as tarball
           curl -L -o /tmp/ksu.tar.gz "https://github.com/tiann/KernelSU/archive/refs/tags/v0.9.5.tar.gz"
-          ls -la /tmp/ksu.tar.gz
-
-          # Extract kernel/ directory to drivers/kernelsu
-          # --strip-components=2 strips "KernelSU-0.9.5/" AND "kernel/"
           mkdir -p kernel/drivers/kernelsu
           tar xzf /tmp/ksu.tar.gz --strip-components=2 -C kernel/drivers/kernelsu KernelSU-0.9.5/kernel/
-
-          # Verify
-          echo "KernelSU files:"
-          ls kernel/drivers/kernelsu/Kconfig kernel/drivers/kernelsu/Makefile
-          head -5 kernel/drivers/kernelsu/Kconfig
+          ls kernel/drivers/kernelsu/Kconfig
 
       - name: Setup defconfig
         run: |
           cd kernel
           cp arch/arm64/configs/bg6-stock_defconfig arch/arm64/configs/itel_s665l_defconfig
 
-          # Match stock vermagic: 5.4.254-android12-9-660867-g3a346a240055-ab527
+          # Match stock vermagic
           sed -i 's/^CONFIG_LOCALVERSION=""/CONFIG_LOCALVERSION="-android12-9"/' arch/arm64/configs/itel_s665l_defconfig
           sed -i 's/^CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' arch/arm64/configs/itel_s665l_defconfig
 
-          # Enable KernelSU
-          cat >> arch/arm64/configs/itel_s665l_defconfig << 'EOF'
-          # KernelSU
-          CONFIG_KSU=y
-          EOF
+          # Enable KernelSU (needs OVERLAY_FS)
+          echo '' >> arch/arm64/configs/itel_s665l_defconfig
+          echo 'CONFIG_OVERLAY_FS=y' >> arch/arm64/configs/itel_s665l_defconfig
+          echo 'CONFIG_KSU=y' >> arch/arm64/configs/itel_s665l_defconfig
 
-          # Enable display drivers (stock has as module)
-          cat >> arch/arm64/configs/itel_s665l_defconfig << 'EOF'
-          # Display
-          CONFIG_DRM_SPRD=m
-          CONFIG_DRM_SPRD_DPU0=y
-          CONFIG_DRM_SPRD_DSI=y
-          CONFIG_DRM_SPRD_GSP_IPC_TRUSTY=y
-          EOF
+          # Enable display drivers
+          echo 'CONFIG_DRM_SPRD=m' >> arch/arm64/configs/itel_s665l_defconfig
+          echo 'CONFIG_DRM_SPRD_DPU0=y' >> arch/arm64/configs/itel_s665l_defconfig
+          echo 'CONFIG_DRM_SPRD_DSI=y' >> arch/arm64/configs/itel_s665l_defconfig
+          echo 'CONFIG_DRM_SPRD_GSP_IPC_TRUSTY=y' >> arch/arm64/configs/itel_s665l_defconfig
+
+          # Disable problematic configs
+          echo '# CONFIG_CORESIGHT is not set' >> arch/arm64/configs/itel_s665l_defconfig
 
       - name: Apply defconfig
         run: |
           cd kernel
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- itel_s665l_defconfig
-          echo "=== Configs ==="
-          grep -E "LOCALVERSION|CONFIG_KSU|CONFIG_KPROBES|CONFIG_MODVERSIONS|CONFIG_DRM_SPRD|CONFIG_PSTORE" .config | grep -v "^#"
+          echo "=== Critical Configs ==="
+          grep -E "LOCALVERSION|OVERLAY_FS|CONFIG_KSU|CONFIG_KPROBES|CONFIG_MODVERSIONS|CONFIG_DRM_SPRD" .config | grep -v "^#"
 
       - name: Build kernel
+        id: build
         run: |
           cd kernel
           echo "Build started: $(date)"
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS=-Wno-error=format -j$(nproc) Image modules 2>&1 | tee /tmp/build.log
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image modules 2>&1 | tee /tmp/build.log
+          BUILD_EXIT=$?
           echo "Build finished: $(date)"
-          ls -lh arch/arm64/boot/Image
-          echo "Modules: $(find . -name '*.ko' | wc -l)"
+          echo "exit_code=$BUILD_EXIT" >> $GITHUB_OUTPUT
+          ls -lh arch/arm64/boot/Image 2>/dev/null
+          echo "Modules: $(find . -name '*.ko' 2>/dev/null | wc -l)"
+          exit $BUILD_EXIT
+
+      - name: Upload build log on failure
+        if: failure()
+        run: |
+          cd kernel
+          echo "=== LAST 50 LINES OF BUILD LOG ==="
+          tail -50 /tmp/build.log 2>/dev/null
+          echo "=== ERRORS ==="
+          grep -i "error:" /tmp/build.log 2>/dev/null | tail -20
+          echo "=== UNDEFINED SYMBOLS ==="
+          grep "undefined reference\|undefined symbol" /tmp/build.log 2>/dev/null | tail -10
 
       - name: Package
+        if: success()
         run: |
           mkdir -p /tmp/output/modules
           cp kernel/arch/arm64/boot/Image /tmp/output/
@@ -83,6 +88,7 @@ jobs:
           zip -r $GITHUB_WORKSPACE/itel-s665l-kernelsu-$(date +%Y%m%d).zip Image modules/
 
       - name: Upload artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: kernelsu-kernel-${{ github.run_number }}
