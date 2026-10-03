@@ -39,14 +39,20 @@ jobs:
           echo 'CONFIG_OVERLAY_FS=y' >> arch/arm64/configs/itel_s665l_defconfig
           echo 'CONFIG_KSU=y' >> arch/arm64/configs/itel_s665l_defconfig
 
-          # Enable display drivers
+          # Display drivers - keep stock, don't force enable proprietary
           echo 'CONFIG_DRM_SPRD=m' >> arch/arm64/configs/itel_s665l_defconfig
           echo 'CONFIG_DRM_SPRD_DPU0=y' >> arch/arm64/configs/itel_s665l_defconfig
           echo 'CONFIG_DRM_SPRD_DSI=y' >> arch/arm64/configs/itel_s665l_defconfig
-          echo 'CONFIG_DRM_SPRD_GSP_IPC_TRUSTY=y' >> arch/arm64/configs/itel_s665l_defconfig
 
-          # Disable problematic configs
+          # Disable problematic configs (missing headers in Bocchi source)
           echo '# CONFIG_CORESIGHT is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_TRUSTY is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_DRM_SPRD_GSP_IPC_TRUSTY is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_SPRD_SFP is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_MEM_ALLOC_FPC is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_SPRD_HYBRIDSWAP is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_ZRAM_HYBRIDSWAP is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_ZRAM_WRITEBACK is not set' >> arch/arm64/configs/itel_s665l_defconfig
 
       - name: Apply defconfig
         run: |
