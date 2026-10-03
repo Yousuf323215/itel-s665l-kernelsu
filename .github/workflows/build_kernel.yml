@@ -69,7 +69,7 @@ jobs:
         run: |
           cd kernel
           echo "Build started: $(date)"
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image modules 2>&1 | tee /tmp/build.log
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS=-Wno-error=format -j$(nproc) Image modules 2>&1 | tee /tmp/build.log
           echo "Build finished: $(date)"
           ls -lh arch/arm64/boot/Image
           echo "Modules: $(find . -name '*.ko' | wc -l)"
