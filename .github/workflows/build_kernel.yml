@@ -26,7 +26,8 @@ jobs:
       - name: Clone KernelSU v0.9.5
         run: |
           cd kernel
-          git clone --depth=1 --branch v0.9.5 https://github.com/tiann/KernelSU.git /tmp/ksu
+          git clone --depth=1 --branch v0.9.5 https://github.com/tiann/KernelSU.git /tmp/ksu || \
+            (git clone https://github.com/tiann/KernelSU.git /tmp/ksu && cd /tmp/ksu && git checkout v0.9.5)
           mkdir -p drivers/kernelsu
           cp -r /tmp/ksu/kernel/* drivers/kernelsu/
           echo "KernelSU installed:"
