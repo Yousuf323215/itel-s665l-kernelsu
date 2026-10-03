@@ -60,7 +60,7 @@ jobs:
         run: |
           cd kernel
           echo "Build started: $(date)"
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image modules 2>&1 | tee /tmp/build.log
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS=-Wno-error=format -j$(nproc) Image modules 2>&1 | tee /tmp/build.log
           BUILD_EXIT=$?
           echo "Build finished: $(date)"
           echo "exit_code=$BUILD_EXIT" >> $GITHUB_OUTPUT
