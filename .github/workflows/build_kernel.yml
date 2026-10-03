@@ -25,86 +25,73 @@ jobs:
 
       - name: Clone KernelSU v0.9.5
         run: |
-          cd kernel
-          git clone --depth=1 --branch v0.9.5 https://github.com/tiann/KernelSU.git /tmp/ksu || \
-            (git clone https://github.com/tiann/KernelSU.git /tmp/ksu && cd /tmp/ksu && git checkout v0.9.5)
-          mkdir -p drivers/kernelsu
-          cp -r /tmp/ksu/kernel/* drivers/kernelsu/
-          echo "KernelSU installed:"
-          ls drivers/kernelsu/Kconfig
+          git clone https://github.com/tiann/KernelSU.git /tmp/ksu
+          cd /tmp/ksu
+          git checkout v0.9.5
+          echo "KernelSU tag:"
+          git describe --tags --exact-match
+          mkdir -p ${{ github.workspace }}/kernel/drivers/kernelsu
+          cp -r /tmp/ksu/kernel/* ${{ github.workspace }}/kernel/drivers/kernelsu/
+          echo "KernelSU files:"
+          ls ${{ github.workspace }}/kernel/drivers/kernelsu/Kconfig
 
       - name: Setup defconfig
         run: |
           cd kernel
-          # Copy bg6-stock as base
           cp arch/arm64/configs/bg6-stock_defconfig arch/arm64/configs/itel_s665l_defconfig
-
-          # Set LOCALVERSION to match stock vermagic prefix
-          sed -i 's/^CONFIG_LOCALVERSION=""/CONFIG_LOCALVERSION="-android12-9"/' arch/arm64/configs/itel_s665l_defconfig
-          sed -i 's/^CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' arch/arm64/configs/itel_s665l_defconfig
-
+          # Set LOCALVERSION to match stock vermagic
+          sed -i 's/CONFIG_LOCALVERSION=""/CONFIG_LOCALVERSION="-android12-9"/' arch/arm64/configs/itel_s665l_defconfig
+          sed -i 's/CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' arch/arm64/configs/itel_s665l_defconfig
           # Enable KernelSU
-          cat >> arch/arm64/configs/itel_s665l_defconfig << 'KSU_EOF'
+          cat >> arch/arm64/configs/itel_s665l_defconfig << 'EOF'
 
           # KernelSU
           CONFIG_KSU=y
-          CONFIG_KSU_DEBUG=n
-          CONFIG_KSU_DISABLE_MANAGER=n
-          KSU_EOF
-
-          # Enable DRM_SPRD (stock display driver as module)
-          cat >> arch/arm64/configs/itel_s665l_defconfig << 'DRM_EOF'
+          EOF
+          # Enable DRM_SPRD as module (stock = module)
+          cat >> arch/arm64/configs/itel_s665l_defconfig << 'EOF'
 
           # Display drivers (stock = module)
           CONFIG_DRM_SPRD=m
           CONFIG_DRM_SPRD_DPU0=y
           CONFIG_DRM_SPRD_DSI=y
-          CONFIG_DRM_SPRD_GSP_IPC_TRUSTY=y
-          DRM_EOF
+          EOF
 
       - name: Apply defconfig
         run: |
           cd kernel
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- itel_s665l_defconfig
           echo "=== Critical Configs ==="
-          grep -E "LOCALVERSION=|CONFIG_KSU=|CONFIG_KPROBES=|CONFIG_MODVERSIONS=|CONFIG_DRM_SPRD=|CONFIG_PSTORE=" .config | head -20
+          grep -E "CONFIG_LOCALVERSION|CONFIG_KSU|CONFIG_KPROBES|CONFIG_MODVERSIONS|CONFIG_DRM_SPRD|CONFIG_PSTORE" .config | head -20
 
       - name: Build kernel
         run: |
           cd kernel
           echo "Build started: $(date)"
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image modules
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image modules 2>&1 | tail -50
           echo "Build finished: $(date)"
           echo "Image size:"
           ls -lh arch/arm64/boot/Image
           echo "Module count:"
           find . -name "*.ko" | wc -l
 
-      - name: Package flashable boot image
+      - name: Package artifacts
+        if: success()
         run: |
-          # Download magiskboot
-          wget -q "https://github.com/topjohnwu/Magisk/releases/download/v28.0/Magisk-v28.0.apk" -O /tmp/magisk.apk
-          cd /tmp && unzip -o magisk.apk "lib/arm64-v8a/libmagiskboot.so" -d magisk_extract 2>/dev/null
-          cp /tmp/magisk_extract/lib/arm64-v8a/libmagiskboot.so /tmp/magiskboot
-          chmod +x /tmp/magiskboot
-
-          mkdir -p /tmp/output
-
-          # Copy kernel Image
-          cp kernel/arch/arm64/boot/Image /tmp/output/Image
-
-          # Copy modules
-          mkdir -p /tmp/output/modules
-          find kernel -name "*.ko" -exec cp {} /tmp/output/modules/ \;
-
-          # Create zip
-          cd /tmp/output
-          DATE=$(date +%Y%m%d)
-          zip -r "${{ github.workspace }}/itel-s665l-kernelsu-${DATE}.zip" Image modules/
+          mkdir -p output/modules
+          cp kernel/arch/arm64/boot/Image output/Image
+          find kernel -name "*.ko" -exec cp {} output/modules/ \;
+          ls -lh output/Image
+          echo "Modules:"
+          ls output/modules/ | head -20
+          echo "Total modules: $(ls output/modules/ | wc -l)"
 
       - name: Upload kernel artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: kernelsu-kernel-${{ github.run_number }}
-          path: /home/runner/work/itel-s665l-kernelsu/itel-s665l-kernelsu/itel-s665l-kernelsu-*.zip
+          name: kernelsu-kernel-itel-s665l
+          path: |
+            output/Image
+            output/modules/*.ko
           retention-days: 30
