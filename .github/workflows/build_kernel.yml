@@ -26,18 +26,6 @@ jobs:
           tar xzf /tmp/ksu.tar.gz --strip-components=2 -C kernel/drivers/kernelsu KernelSU-0.9.5/kernel/
           ls kernel/drivers/kernelsu/Kconfig
 
-          # Nuke directories with missing proprietary Unisoc headers
-          # These are referenced by Kconfig 'select' so disabling config won't help
-          for dir in kernel/drivers/trusty kernel/drivers/soc/sprd/sfp kernel/drivers/block/zram/hybridswap; do
-            if [ -d "$dir" ]; then
-              rm -rf "$dir"
-              mkdir -p "$dir"
-              echo '# stubbed out' > "$dir/Kconfig"
-              echo 'obj-' > "$dir/Makefile"
-              echo "Stubbed: $dir"
-            fi
-          done
-
       - name: Setup defconfig
         run: |
           cd kernel
@@ -52,26 +40,26 @@ jobs:
           echo 'CONFIG_OVERLAY_FS=y' >> arch/arm64/configs/itel_s665l_defconfig
           echo 'CONFIG_KSU=y' >> arch/arm64/configs/itel_s665l_defconfig
 
-      - name: Apply defconfig + fix configs
+      - name: Apply defconfig + disable problematic configs
         run: |
           cd kernel
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- itel_s665l_defconfig
 
-          # Use kernel's own config tool to properly disable (handles 'select' deps)
-          scripts/config --disable CORESIGHT
+          # Disable configs with missing headers / compile issues on GCC 11.4
+          # NOTE: use exact Kconfig symbol names from source!
+          scripts/config --disable HYBRIDSWAP
+          scripts/config --disable HYBRIDSWAP_SWAPD
+          scripts/config --disable HYBRIDSWAP_CORE
+          scripts/config --disable HYBRIDSWAP_ASYNC_COMPRESS
           scripts/config --disable TRUSTY
-          scripts/config --disable DRM_SPRD_GSP_IPC_TRUSTY
           scripts/config --disable SPRD_SFP
-          scripts/config --disable MEM_ALLOC_FPC
-          scripts/config --disable SPRD_HYBRIDSWAP
-          scripts/config --disable ZRAM_HYBRIDSWAP
-          scripts/config --disable ZRAM_WRITEBACK
+          scripts/config --disable CORESIGHT
 
-          # Resolve any dependency changes
+          # Resolve dependencies
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
-          echo "=== Critical Configs ==="
-          grep -E "LOCALVERSION|OVERLAY_FS|KSU|KPROBES|MODVERSIONS|TRUSTY|SPRD_SFP|HYBRIDSWAP|CORESIGHT" .config | head -20
+          echo "=== Verify disabled ==="
+          grep -E "HYBRIDSWAP|TRUSTY|SPRD_SFP|CORESIGHT" .config || echo "All disabled!"
 
       - name: Build kernel
         id: build
