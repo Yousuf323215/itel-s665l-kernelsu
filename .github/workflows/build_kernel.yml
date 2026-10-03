@@ -25,6 +25,13 @@ jobs:
           tar xzf /tmp/ksu.tar.gz --strip-components=2 -C kernel/drivers/kernelsu KernelSU-0.9.5/kernel/
           ls kernel/drivers/kernelsu/Kconfig
 
+          # Remove dirs with missing proprietary headers (trusty.h, sfp.h, hybridswap)
+          rm -rf kernel/drivers/trusty
+          rm -rf kernel/drivers/soc/sprd/sfp
+          rm -rf kernel/drivers/block/zram/hybridswap
+          rm -rf kernel/drivers/gpu/drm/sprd/sprd_dsi_panel.c
+          echo "Removed problematic driver directories" 
+
       - name: Setup defconfig
         run: |
           cd kernel
