@@ -19,12 +19,56 @@ jobs:
           git clone --depth=1 https://github.com/Bocchi-The-Dev/kernel_transsion_ums9230.git kernel
           head -4 kernel/Makefile
 
-          # Install KernelSU v0.9.5
+          # Install KernelSU v0.9.5 via tarball
           curl -L -o /tmp/ksu.tar.gz "https://github.com/tiann/KernelSU/archive/refs/tags/v0.9.5.tar.gz"
           rm -rf kernel/drivers/kernelsu
           mkdir -p kernel/drivers/kernelsu
           tar xzf /tmp/ksu.tar.gz --strip-components=2 -C kernel/drivers/kernelsu KernelSU-0.9.5/kernel/
           ls kernel/drivers/kernelsu/Kconfig
+
+      - name: Gut problematic driver source (missing proprietary headers)
+        run: |
+          cd kernel
+
+          # 1. OVERWRITE drivers/block/zram/Makefile — remove hybridswap line
+          cat > drivers/block/zram/Makefile << 'EOF'
+# SPDX-License-Identifier: GPL-2.0-only
+zram-y				:=	zcomp.o zram_drv.o
+zram-$(CONFIG_ZRAM_DEDUP)	+=	zram_dedup.o
+obj-$(CONFIG_ZRAM)		+=	zram.o
+EOF
+
+          # 2. OVERWRITE drivers/block/zram/Kconfig — remove all HYBRIDSWAP entries
+          cat > drivers/block/zram/Kconfig << 'EOF'
+config ZRAM
+	tristate "Compressed RAM block device support"
+	depends on BLOCK && SYSFS && ZSMALLOC && CRYPTO
+	select CRYPTO_LZO
+	default n
+
+config ZRAM_WRITEBACK
+	bool "Write back incompressible or idle page to backing device"
+	depends on ZRAM
+
+config ZRAM_MEMORY_TRACKING
+	bool "Track zRam block status"
+	depends on ZRAM && DEBUG_FS
+EOF
+
+          # 3. Remove trusty source files + references from parent
+          rm -rf drivers/trusty
+          sed -i '/trusty/d' drivers/Kconfig
+          sed -i '/trusty/d' drivers/Makefile
+
+          # 4. Remove sfp source files + references from parent
+          rm -rf drivers/soc/sprd/sfp
+          sed -i '/sfp/d' drivers/soc/sprd/Kconfig
+          sed -i '/sfp/d' drivers/soc/sprd/Makefile
+
+          echo "=== Verify gutted ==="
+          grep -r "hybridswap" drivers/block/zram/ 2>/dev/null || echo "zram: no hybridswap"
+          grep "trusty" drivers/Kconfig 2>/dev/null || echo "drivers/Kconfig: no trusty"
+          grep "sfp" drivers/soc/sprd/Kconfig 2>/dev/null || echo "sprd/Kconfig: no sfp"
 
       - name: Setup defconfig
         run: |
@@ -40,33 +84,39 @@ jobs:
           echo 'CONFIG_OVERLAY_FS=y' >> arch/arm64/configs/itel_s665l_defconfig
           echo 'CONFIG_KSU=y' >> arch/arm64/configs/itel_s665l_defconfig
 
-      - name: Apply defconfig + disable problematic configs
+          # Disable problematic configs in defconfig
+          echo '# CONFIG_TRUSTY is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_SPRD_SFP is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_HYBRIDSWAP is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_ZRAM_HYBRIDSWAP is not set' >> arch/arm64/configs/itel_s665l_defconfig
+          echo '# CONFIG_CORESIGHT is not set' >> arch/arm64/configs/itel_s665l_defconfig
+
+      - name: Apply defconfig
         run: |
           cd kernel
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- itel_s665l_defconfig
 
-          # Disable configs with missing headers / compile issues on GCC 11.4
-          # NOTE: use exact Kconfig symbol names from source!
-          scripts/config --disable HYBRIDSWAP
-          scripts/config --disable HYBRIDSWAP_SWAPD
-          scripts/config --disable HYBRIDSWAP_CORE
-          scripts/config --disable HYBRIDSWAP_ASYNC_COMPRESS
-          scripts/config --disable TRUSTY
-          scripts/config --disable SPRD_SFP
-          scripts/config --disable CORESIGHT
+          # Force disable in .config after olddefconfig (Kconfig default=y re-enables)
+          sed -i 's/CONFIG_HYBRIDSWAP=y/# CONFIG_HYBRIDSWAP is not set/' .config
+          sed -i 's/CONFIG_HYBRIDSWAP_SWAPD=y/# CONFIG_HYBRIDSWAP_SWAPD is not set/' .config
+          sed -i 's/CONFIG_HYBRIDSWAP_CORE=y/# CONFIG_HYBRIDSWAP_CORE is not set/' .config
+          sed -i 's/CONFIG_TRUSTY=y/# CONFIG_TRUSTY is not set/' .config
+          sed -i 's/CONFIG_SPRD_SFP=y/# CONFIG_SPRD_SFP is not set/' .config
+          sed -i 's/CONFIG_DRM_SPRD_GSP_IPC_TRUSTY=y/# CONFIG_DRM_SPRD_GSP_IPC_TRUSTY is not set/' .config
+          sed -i 's/CONFIG_CORESIGHT=y/# CONFIG_CORESIGHT is not set/' .config
 
-          # Resolve dependencies
+          # Run olddefconfig again to resolve deps with new values
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
-          echo "=== Verify disabled ==="
-          grep -E "HYBRIDSWAP|TRUSTY|SPRD_SFP|CORESIGHT" .config || echo "All disabled!"
+          echo "=== Final verify ==="
+          grep -E "HYBRIDSWAP|TRUSTY|SPRD_SFP|CORESIGHT" .config | grep -v "^#" || echo "All disabled!"
 
       - name: Build kernel
         id: build
         run: |
           cd kernel
           echo "Build started: $(date)"
-          # -w = suppress ALL warnings (GCC 11.4 stricter than Unisoc's GCC 9/10)
+          # -w = suppress ALL warnings (GCC 11.4 stricter than GCC 9/10 used by Unisoc)
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS="-w" -j$(nproc) Image modules 2>&1 | tee /tmp/build.log
           BUILD_EXIT=$?
           echo "Build finished: $(date)"
@@ -79,10 +129,10 @@ jobs:
         if: failure()
         run: |
           cd kernel
-          echo "=== LAST 50 LINES OF BUILD LOG ==="
+          echo "=== LAST 50 LINES ==="
           tail -50 /tmp/build.log 2>/dev/null
           echo "=== ERRORS ==="
-          grep -i "error:" /tmp/build.log 2>/dev/null | tail -20
+          grep -i "error:\|Error\|fatal" /tmp/build.log 2>/dev/null | tail -20
 
       - name: Package
         if: success()
