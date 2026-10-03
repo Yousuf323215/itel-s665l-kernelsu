@@ -13,29 +13,26 @@ jobs:
           sudo apt-get install -y build-essential bc bison flex libssl-dev \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             libncurses-dev python3 unzip zip cpio lz4
-          echo "Dependencies installed ✅"
 
-      - name: Clone kernel source + KernelSU
+      - name: Clone kernel + KernelSU
         run: |
           # Clone Bocchi UMS9230 kernel (5.4.254)
           git clone --depth=1 https://github.com/Bocchi-The-Dev/kernel_transsion_ums9230.git kernel
-          echo "Kernel version:"
           head -4 kernel/Makefile
 
-          # Download KernelSU v0.9.5 source as tarball (more reliable than git clone)
+          # Download KernelSU v0.9.5 as tarball
           curl -L -o /tmp/ksu.tar.gz "https://github.com/tiann/KernelSU/archive/refs/tags/v0.9.5.tar.gz"
           ls -la /tmp/ksu.tar.gz
-          tar tzf /tmp/ksu.tar.gz | head -5
 
-          # Remove existing kernelsu from Bocchi source, replace with v0.9.5
-          rm -rf kernel/drivers/kernelsu
+          # Extract kernel/ directory to drivers/kernelsu
+          # --strip-components=2 strips "KernelSU-0.9.5/" AND "kernel/"
           mkdir -p kernel/drivers/kernelsu
           tar xzf /tmp/ksu.tar.gz --strip-components=2 -C kernel/drivers/kernelsu KernelSU-0.9.5/kernel/
 
           # Verify
           echo "KernelSU files:"
           ls kernel/drivers/kernelsu/Kconfig kernel/drivers/kernelsu/Makefile
-          head -10 kernel/drivers/kernelsu/Kconfig
+          head -5 kernel/drivers/kernelsu/Kconfig
 
       - name: Setup defconfig
         run: |
